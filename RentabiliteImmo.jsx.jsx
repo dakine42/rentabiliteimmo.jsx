@@ -16,7 +16,7 @@ const defaultBien = {
   nom: "Mon bien", adresse: "", typeBien: "Appartement", prix: 180000, travaux: 0, surface: 80, apport: 20000,
   taux: 3, duree: 15, tauxAssurance: 0.3, loyer: 900,
   taxeFonciere: 1200, entretien: 0, assurancePNO: 500, comptable: 0, autresCharges: 0,
-  emplacement: 3, regime: "micro-foncier", trancheMarginalIR: 30,
+  emplacement: 3, regime: "micro-foncier", trancheMarginalIR: 30, vacanceLocative: 0, tauxGestion: 0,
   lots: [{ id: 1, nom: "Lot 1", surface: 80, loyer: 900, type: "Appartement" }],
 };
 
@@ -34,6 +34,12 @@ function calculer(b) {
     : b.surface;
   const loyerAnnuel = loyerMensuel * 12;
   const charges = b.taxeFonciere + b.entretien + b.assurancePNO + b.comptable + b.autresCharges;
+  // Vacance locative et frais de gestion
+  const vacanceMois = b.vacanceLocative || 0;
+  const tauxGestion = b.tauxGestion || 0;
+  const loyerAnnuelVacance = loyerMensuel * (12 - vacanceMois);
+  const fraisGestion = loyerAnnuelVacance * tauxGestion / 100;
+  const loyerNetGestion = loyerAnnuelVacance - fraisGestion;
   const r = b.taux / 100 / 12;
   const n = b.duree * 12;
   const mensualiteCredit = r === 0 ? aEmprunter / n : aEmprunter * (r / (1 - Math.pow(1 + r, -n)));
@@ -65,6 +71,7 @@ function calculer(b) {
     const seuilIS = 42500;
     impotFiscal = revenuImposable <= seuilIS ? revenuImposable * 0.15 : seuilIS * 0.15 + (revenuImposable - seuilIS) * 0.25;
   }
+  const cashflowAvecVacance = (loyerNetGestion - charges - (mensualiteTotale * 12)) / 12;
   const cashflowApresImpot = cashflowMensuel - impotFiscal / 12;
   const interpRentaNette = rentaNette < 4 ? ["Faible", 1] : rentaNette < 6 ? ["Correct", 2] : rentaNette < 8 ? ["Bon", 3] : rentaNette < 10 ? ["Très bon", 4] : ["Excellent", 5];
   const interpRentaNetNet = rentaNetNet < 0 ? ["Risque", 1] : rentaNetNet < 3 ? ["Faible", 2] : rentaNetNet < 6 ? ["Correct", 3] : rentaNetNet < 10 ? ["Bon", 4] : ["Excellent", 5];
@@ -80,7 +87,7 @@ function calculer(b) {
     capitalRestant = Math.max(0, capitalRestant - capitalRembourse);
     amortissement.push({ mois: i, mensualiteCredit: Math.round(mensualiteCredit * 100) / 100, interets: Math.round(interets * 100) / 100, capitalRembourse: Math.round(capitalRembourse * 100) / 100, assurance: Math.round(mensualiteAssurance * 100) / 100, mensualiteTotale: Math.round(mensualiteTotale * 100) / 100, capitalRestant: Math.round(capitalRestant * 100) / 100, cashflowCumule: Math.round((cashflowMensuel * i) * 100) / 100 });
   }
-  return { notaire, coutTotal, aEmprunter, loyerAnnuel, charges, mensualiteCredit, mensualiteAssurance, mensualiteTotale, coutTotalCredit, rentaBrute, rentaNette, rentaNetNet, dscr, cashflowMensuel, prixM2, prixM2Travaux, interpRentaNette, interpRentaNetNet, interpDSCR, interpCash, score, interpScore, amortissement, revenuImposable, impotFiscal, cashflowApresImpot };
+  return { notaire, coutTotal, aEmprunter, loyerAnnuel, charges, mensualiteCredit, mensualiteAssurance, mensualiteTotale, coutTotalCredit, rentaBrute, rentaNette, rentaNetNet, dscr, cashflowMensuel, prixM2, prixM2Travaux, interpRentaNette, interpRentaNetNet, interpDSCR, interpCash, score, interpScore, amortissement, revenuImposable, impotFiscal, cashflowApresImpot, vacanceMois, fraisGestion, loyerAnnuelVacance, loyerNetGestion, cashflowAvecVacance };
 }
 
 function calculerScenarios(b) {
@@ -230,6 +237,22 @@ const css = `
   .fu3 { animation: fadeUp 0.4s 0.21s ease both; }
   .fu4 { animation: fadeUp 0.4s 0.28s ease both; }
 
+  /* ── RESPONSIVE MOBILE ── */
+  @media (max-width: 768px) {
+    .sidebar { display: none !important; }
+    .sidebar.open { display: block !important; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 1000; overflow-y: auto; }
+    .main-content { padding: 12px !important; max-height: none !important; }
+    .header-kpis { display: none !important; }
+    .tabs-bar { padding: 0 8px !important; }
+    .mobile-bottom-bar { display: flex !important; }
+    .stat-grid-4 { grid-template-columns: 1fr 1fr !important; }
+    .stat-grid-3 { grid-template-columns: 1fr 1fr !important; }
+    .stat-grid-5 { grid-template-columns: 1fr 1fr !important; }
+  }
+  @media (min-width: 769px) {
+    .mobile-bottom-bar { display: none !important; }
+    .mobile-header-btn { display: none !important; }
+  }
   /* ── PDF PRINT STYLES ── */
   @media print {
     body { background: white !important; margin: 0; }
@@ -398,6 +421,26 @@ function BienForm({ bien, onChange }) {
         <Input label="Taxe foncière" value={bien.taxeFonciere} onChange={f("taxeFonciere")} suffix="€/an" step={100} />
         <Input label="Assurance PNO" value={bien.assurancePNO} onChange={f("assurancePNO")} suffix="€/an" step={50} />
         <Input label="Entretien" value={bien.entretien} onChange={f("entretien")} suffix="€/an" step={100} />
+        {/* Vacance locative */}
+        <div style={{ marginBottom: 11 }}>
+          <label style={{ display: "block", fontSize: 11, color: T.textMuted, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Vacance locative</label>
+          <div style={{ display: "flex", gap: 5, marginBottom: 5 }}>
+            {[0,1,2,3].map(m => (
+              <button key={m} onClick={() => onChange({ ...bien, vacanceLocative: m })} style={{ flex: 1, padding: "6px 4px", border: `1px solid ${(bien.vacanceLocative||0) === m ? T.orange+"60" : T.border}`, borderRadius: 7, background: (bien.vacanceLocative||0) === m ? T.orange+"18" : T.surface2, color: (bien.vacanceLocative||0) === m ? T.orange : T.textMuted, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>{m} mois</button>
+            ))}
+          </div>
+          {(bien.vacanceLocative||0) > 0 && <div style={{ fontSize: 10, color: T.orange }}>⚠️ Impact : -{fmtEur(Math.round((bien.typeBien==="Immeuble"&&bien.lots?.length?bien.lots.reduce((s,l)=>s+(l.loyer||0),0):bien.loyer) * (bien.vacanceLocative||0)))}/an</div>}
+        </div>
+        {/* Frais de gestion locative */}
+        <div style={{ marginBottom: 11 }}>
+          <label style={{ display: "block", fontSize: 11, color: T.textMuted, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Gestion locative</label>
+          <div style={{ display: "flex", gap: 5, marginBottom: 5 }}>
+            {[0,5,7,10].map(t => (
+              <button key={t} onClick={() => onChange({ ...bien, tauxGestion: t })} style={{ flex: 1, padding: "6px 4px", border: `1px solid ${(bien.tauxGestion||0) === t ? T.blue+"60" : T.border}`, borderRadius: 7, background: (bien.tauxGestion||0) === t ? T.blue+"18" : T.surface2, color: (bien.tauxGestion||0) === t ? T.blue : T.textMuted, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>{t === 0 ? "Moi" : t+"%"}</button>
+            ))}
+          </div>
+          {(bien.tauxGestion||0) > 0 && <div style={{ fontSize: 10, color: T.blue }}>Agence : ~{bien.tauxGestion}% TTC des loyers perçus</div>}
+        </div>
         <Input label="Comptable" value={bien.comptable} onChange={f("comptable")} suffix="€/an" step={50} />
         <Input label="Autres charges" value={bien.autresCharges} onChange={f("autresCharges")} suffix="€/an" step={100} />
       </Collapsible>
@@ -1188,12 +1231,1072 @@ function DiagnosticIA({ bien, res }) {
   );
 }
 
+
+// ─── CALCULATEUR TRAVAUX ─────────────────────────────────────────────────────
+const REGIONS_FR = [
+  "Île-de-France","Auvergne-Rhône-Alpes","Provence-Alpes-Côte d'Azur","Occitanie",
+  "Nouvelle-Aquitaine","Grand Est","Hauts-de-France","Bretagne","Normandie",
+  "Pays de la Loire","Bourgogne-Franche-Comté","Centre-Val de Loire","Corse",
+];
+
+// ─── POSTES TRAVAUX DÉTAILLÉS ────────────────────────────────────────────────
+const POSTES_TRAVAUX_DETAIL = [
+  {
+    id: "toiture", label: "Toiture & Charpente", icon: "🏚️",
+    sousPostes: [
+      { id: "t1", label: "Remplacement tuiles / ardoises (partiel)", unite: "m²", prixMin: 40, prixMax: 90 },
+      { id: "t2", label: "Réfection complète toiture", unite: "m²", prixMin: 80, prixMax: 180 },
+      { id: "t3", label: "Réparation charpente (renforts)", unite: "forfait", prixMin: 1500, prixMax: 6000 },
+      { id: "t4", label: "Remplacement charpente complète", unite: "m²", prixMin: 60, prixMax: 130 },
+      { id: "t5", label: "Zinguerie (gouttières, noues)", unite: "ml", prixMin: 30, prixMax: 80 },
+      { id: "t6", label: "Velux / fenêtre de toit", unite: "unité", prixMin: 800, prixMax: 2500 },
+    ]
+  },
+  {
+    id: "facade", label: "Façade & Ravalement", icon: "🧱",
+    sousPostes: [
+      { id: "f1", label: "Peinture façade seule", unite: "m²", prixMin: 10, prixMax: 25 },
+      { id: "f2", label: "Enduit de finition (crépi)", unite: "m²", prixMin: 20, prixMax: 50 },
+      { id: "f3", label: "Ravalement complet (piquage + enduit)", unite: "m²", prixMin: 40, prixMax: 100 },
+      { id: "f4", label: "Réparation fissures (injection résine)", unite: "ml", prixMin: 30, prixMax: 80 },
+      { id: "f5", label: "Isolation thermique extérieure (ITE)", unite: "m²", prixMin: 80, prixMax: 180 },
+      { id: "f6", label: "Bardage bois / composite", unite: "m²", prixMin: 60, prixMax: 140 },
+    ]
+  },
+  {
+    id: "electricite", label: "Électricité", icon: "⚡",
+    sousPostes: [
+      { id: "e1", label: "Mise aux normes tableau électrique", unite: "forfait", prixMin: 800, prixMax: 2000 },
+      { id: "e2", label: "Remplacement tableau + disjoncteurs", unite: "forfait", prixMin: 1200, prixMax: 3000 },
+      { id: "e3", label: "Mise aux normes complète (logement)", unite: "m²", prixMin: 50, prixMax: 100 },
+      { id: "e4", label: "Ajout prises / interrupteurs", unite: "unité", prixMin: 60, prixMax: 150 },
+      { id: "e5", label: "Mise à la terre complète", unite: "forfait", prixMin: 500, prixMax: 1500 },
+      { id: "e6", label: "Câblage réseau / fibre / domotique", unite: "forfait", prixMin: 800, prixMax: 3000 },
+    ]
+  },
+  {
+    id: "plomberie", label: "Plomberie", icon: "🚿",
+    sousPostes: [
+      { id: "p1", label: "Remplacement robinetterie (lavabo, WC)", unite: "unité", prixMin: 150, prixMax: 400 },
+      { id: "p2", label: "Réfection salle de bain complète", unite: "forfait", prixMin: 4000, prixMax: 12000 },
+      { id: "p3", label: "Remplacement tuyauterie (cuivre/PER)", unite: "forfait", prixMin: 2000, prixMax: 8000 },
+      { id: "p4", label: "Installation WC suspendu", unite: "unité", prixMin: 600, prixMax: 1800 },
+      { id: "p5", label: "Ballon eau chaude / chauffe-eau", unite: "unité", prixMin: 500, prixMax: 1500 },
+      { id: "p6", label: "Douche à l'italienne", unite: "unité", prixMin: 1500, prixMax: 4000 },
+    ]
+  },
+  {
+    id: "chauffage", label: "Chauffage", icon: "🔥",
+    sousPostes: [
+      { id: "ch1", label: "Remplacement chaudière gaz", unite: "forfait", prixMin: 2500, prixMax: 6000 },
+      { id: "ch2", label: "Pompe à chaleur air/air", unite: "forfait", prixMin: 3000, prixMax: 8000 },
+      { id: "ch3", label: "Pompe à chaleur air/eau", unite: "forfait", prixMin: 8000, prixMax: 18000 },
+      { id: "ch4", label: "Radiateurs électriques (inertie)", unite: "unité", prixMin: 250, prixMax: 700 },
+      { id: "ch5", label: "Remplacement radiateurs eau", unite: "unité", prixMin: 300, prixMax: 800 },
+      { id: "ch6", label: "Plancher chauffant (rénovation)", unite: "m²", prixMin: 60, prixMax: 130 },
+      { id: "ch7", label: "Poêle à bois / insert", unite: "unité", prixMin: 2000, prixMax: 6000 },
+    ]
+  },
+  {
+    id: "isolation", label: "Isolation", icon: "🌡️",
+    sousPostes: [
+      { id: "i1", label: "Isolation combles perdus (soufflage)", unite: "m²", prixMin: 15, prixMax: 35 },
+      { id: "i2", label: "Isolation combles aménagés", unite: "m²", prixMin: 25, prixMax: 60 },
+      { id: "i3", label: "Isolation murs intérieure (ITI)", unite: "m²", prixMin: 30, prixMax: 70 },
+      { id: "i4", label: "Isolation plancher bas", unite: "m²", prixMin: 20, prixMax: 50 },
+      { id: "i5", label: "Isolation cave / vide sanitaire", unite: "m²", prixMin: 15, prixMax: 40 },
+    ]
+  },
+  {
+    id: "menuiseries", label: "Menuiseries & Vitrages", icon: "🪟",
+    sousPostes: [
+      { id: "m1", label: "Fenêtre PVC double vitrage", unite: "unité", prixMin: 350, prixMax: 700 },
+      { id: "m2", label: "Fenêtre ALU double vitrage", unite: "unité", prixMin: 500, prixMax: 1000 },
+      { id: "m3", label: "Fenêtre bois double vitrage", unite: "unité", prixMin: 600, prixMax: 1200 },
+      { id: "m4", label: "Porte d'entrée (sécurité)", unite: "unité", prixMin: 800, prixMax: 2500 },
+      { id: "m5", label: "Porte de garage (motorisée)", unite: "unité", prixMin: 1500, prixMax: 4000 },
+      { id: "m6", label: "Volets roulants (électriques)", unite: "unité", prixMin: 400, prixMax: 900 },
+      { id: "m7", label: "Garde-corps / rampe escalier", unite: "ml", prixMin: 150, prixMax: 400 },
+    ]
+  },
+  {
+    id: "sols", label: "Sols", icon: "🏠",
+    sousPostes: [
+      { id: "s1", label: "Carrelage (pose + fourniture)", unite: "m²", prixMin: 35, prixMax: 80 },
+      { id: "s2", label: "Parquet massif (pose + fourniture)", unite: "m²", prixMin: 50, prixMax: 120 },
+      { id: "s3", label: "Parquet stratifié / contrecollé", unite: "m²", prixMin: 25, prixMax: 60 },
+      { id: "s4", label: "Béton ciré / résine", unite: "m²", prixMin: 60, prixMax: 150 },
+      { id: "s5", label: "Ragréage / remise à niveau", unite: "m²", prixMin: 15, prixMax: 35 },
+      { id: "s6", label: "Démolition ancien revêtement", unite: "m²", prixMin: 8, prixMax: 20 },
+    ]
+  },
+  {
+    id: "cloisons", label: "Cloisons & Plâtrerie", icon: "🧱",
+    sousPostes: [
+      { id: "cl1", label: "Cloison placo (fourniture + pose)", unite: "m²", prixMin: 30, prixMax: 70 },
+      { id: "cl2", label: "Démolition cloison existante", unite: "m²", prixMin: 15, prixMax: 40 },
+      { id: "cl3", label: "Faux plafond placo", unite: "m²", prixMin: 25, prixMax: 60 },
+      { id: "cl4", label: "Enduit / rebouchage murs", unite: "m²", prixMin: 10, prixMax: 25 },
+      { id: "cl5", label: "Isolation phonique cloison", unite: "m²", prixMin: 40, prixMax: 90 },
+    ]
+  },
+  {
+    id: "peinture", label: "Peinture intérieure", icon: "🎨",
+    sousPostes: [
+      { id: "pe1", label: "Peinture murs (lasure 2 couches)", unite: "m²", prixMin: 8, prixMax: 18 },
+      { id: "pe2", label: "Peinture murs + plafonds", unite: "m²", prixMin: 12, prixMax: 28 },
+      { id: "pe3", label: "Peinture avec préparation (enduit)", unite: "m²", prixMin: 18, prixMax: 40 },
+      { id: "pe4", label: "Papier peint (pose + fourniture)", unite: "m²", prixMin: 20, prixMax: 50 },
+      { id: "pe5", label: "Peinture boiseries / huisseries", unite: "ml", prixMin: 10, prixMax: 25 },
+    ]
+  },
+  {
+    id: "cuisine", label: "Cuisine", icon: "🍳",
+    sousPostes: [
+      { id: "cu1", label: "Cuisine équipée entrée de gamme", unite: "forfait", prixMin: 3000, prixMax: 6000 },
+      { id: "cu2", label: "Cuisine équipée milieu de gamme", unite: "forfait", prixMin: 6000, prixMax: 12000 },
+      { id: "cu3", label: "Cuisine équipée haut de gamme", unite: "forfait", prixMin: 12000, prixMax: 30000 },
+      { id: "cu4", label: "Remplacement plan de travail seul", unite: "ml", prixMin: 150, prixMax: 400 },
+      { id: "cu5", label: "Carrelage / crédence cuisine", unite: "m²", prixMin: 40, prixMax: 90 },
+    ]
+  },
+  {
+    id: "gros_oeuvre", label: "Gros œuvre & Démolition", icon: "⛏️",
+    sousPostes: [
+      { id: "g1", label: "Abattage mur porteur (avec IPN)", unite: "ml", prixMin: 800, prixMax: 2500 },
+      { id: "g2", label: "Abattage cloison non porteuse", unite: "m²", prixMin: 30, prixMax: 80 },
+      { id: "g3", label: "Traitement humidité (injection)", unite: "ml", prixMin: 80, prixMax: 200 },
+      { id: "g4", label: "Reprise de fissures structurelles", unite: "ml", prixMin: 100, prixMax: 300 },
+      { id: "g5", label: "Création ou agrandissement ouverture", unite: "unité", prixMin: 1500, prixMax: 5000 },
+      { id: "g6", label: "Évacuation gravats (benne)", unite: "forfait", prixMin: 300, prixMax: 1000 },
+    ]
+  },
+  {
+    id: "vmc", label: "VMC & Ventilation", icon: "💨",
+    sousPostes: [
+      { id: "v1", label: "VMC simple flux (pose complète)", unite: "forfait", prixMin: 600, prixMax: 1500 },
+      { id: "v2", label: "VMC double flux", unite: "forfait", prixMin: 3000, prixMax: 7000 },
+      { id: "v3", label: "Remplacement VMC existante", unite: "forfait", prixMin: 300, prixMax: 800 },
+      { id: "v4", label: "Grilles de ventilation", unite: "unité", prixMin: 50, prixMax: 150 },
+    ]
+  },
+];
+
+async function fetchPrixTravauxDetail(sousPostesActifs, region, annee) {
+  if (!sousPostesActifs.length) return null;
+  const liste = sousPostesActifs.map(p => `- ${p.label} (${p.unite})`).join("\n");
+  const prompt = `Expert chiffrage travaux immobiliers France. Donne les prix unitaires actuels ${annee} pour ces travaux en ${region}.
+
+${liste}
+
+Réponds UNIQUEMENT en JSON valide :
+{"postes":[{"id":"t1","prixMin":40,"prixMax":90,"note":"info marché court"},...]}`;
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1500, messages: [{ role: "user", content: prompt }] })
+  });
+  if (!response.ok) throw new Error(`API ${response.status}`);
+  const data = await response.json();
+  const raw = (data.content || []).map(i => i.text || "").join("").trim();
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error("Réponse invalide");
+  try { return JSON.parse(match[0]); }
+  catch { return JSON.parse(match[0].replace(/[\u0000-\u001F\u007F]/g, " ").replace(/,\s*([}\]])/g, "$1")); }
+}
+
+function CalculateurTravaux({ bien, onChange }) {
+  const surface = bien.typeBien === "Immeuble" && bien.lots?.length
+    ? bien.lots.reduce((s, l) => s + (l.surface || 0), 0) : bien.surface;
+  const annee = new Date().getFullYear();
+
+  // État : pour chaque sous-poste { actif, quantite, niveau, prixIA, noteIA }
+  const [detail, setDetail] = useState(() => {
+    const d = {};
+    POSTES_TRAVAUX_DETAIL.forEach(p => {
+      p.sousPostes.forEach(sp => {
+        d[sp.id] = { actif: false, quantite: sp.unite === "m²" ? surface : 1, niveau: "standard", prixIA: null, noteIA: "" };
+      });
+    });
+    return d;
+  });
+  const [openPostes, setOpenPostes] = useState({});
+  const [region, setRegion] = useState(() => {
+    const adresse = (bien.adresse || "").toLowerCase();
+    if (adresse.includes("paris") || adresse.includes("75")) return "Île-de-France";
+    if (adresse.includes("lyon") || adresse.includes("69")) return "Auvergne-Rhône-Alpes";
+    if (adresse.includes("marseille") || adresse.includes("13")) return "Provence-Alpes-Côte d'Azur";
+    if (adresse.includes("toulouse") || adresse.includes("31")) return "Occitanie";
+    if (adresse.includes("bordeaux") || adresse.includes("33")) return "Nouvelle-Aquitaine";
+    return "Auvergne-Rhône-Alpes";
+  });
+  const [marge, setMarge] = useState(10);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [prixIAActifs, setPrixIAActifs] = useState(false);
+
+  const togglePoste = id => setOpenPostes(prev => ({ ...prev, [id]: !prev[id] }));
+  const toggleSP = id => setDetail(prev => ({ ...prev, [id]: { ...prev[id], actif: !prev[id].actif } }));
+  const updateSP = (id, key, val) => setDetail(prev => ({ ...prev, [id]: { ...prev[id], [key]: val } }));
+
+  const getPrixUnit = (sp, d) => {
+    if (d.prixIA !== null) return d.prixIA;
+    return d.niveau === "eco" ? sp.prixMin : d.niveau === "premium" ? sp.prixMax : Math.round((sp.prixMin + sp.prixMax) / 2);
+  };
+
+  const totalParPoste = POSTES_TRAVAUX_DETAIL.map(p => ({
+    ...p,
+    total: p.sousPostes.reduce((s, sp) => {
+      const d = detail[sp.id];
+      return d.actif ? s + getPrixUnit(sp, d) * d.quantite : s;
+    }, 0),
+    nbActifs: p.sousPostes.filter(sp => detail[sp.id].actif).length,
+  }));
+
+  const total = totalParPoste.reduce((s, p) => s + p.total, 0);
+  const totalAvecMarge = Math.round(total * (1 + marge / 100));
+
+  const lancerIA = async () => {
+    const actifs = [];
+    POSTES_TRAVAUX_DETAIL.forEach(p => p.sousPostes.forEach(sp => { if (detail[sp.id].actif) actifs.push({ ...sp }); }));
+    if (!actifs.length) { setError("Coche au moins un sous-poste !"); return; }
+    setLoading(true); setError("");
+    try {
+      const result = await fetchPrixTravauxDetail(actifs, region, annee);
+      if (!result?.postes) throw new Error("Pas de résultat");
+      const newDetail = { ...detail };
+      result.postes.forEach(r => {
+        if (newDetail[r.id]) {
+          const d = newDetail[r.id];
+          const sp = POSTES_TRAVAUX_DETAIL.flatMap(p => p.sousPostes).find(s => s.id === r.id);
+          if (!sp) return;
+          const prix = d.niveau === "eco" ? r.prixMin : d.niveau === "premium" ? r.prixMax : Math.round((r.prixMin + r.prixMax) / 2);
+          newDetail[r.id] = { ...d, prixIA: prix, noteIA: r.note || "", prixMin: r.prixMin, prixMax: r.prixMax };
+        }
+      });
+      setDetail(newDetail);
+      setPrixIAActifs(true);
+    } catch (e) { setError("Erreur IA : " + e.message); }
+    finally { setLoading(false); }
+  };
+
+  const resetIA = () => {
+    setDetail(prev => {
+      const n = { ...prev };
+      Object.keys(n).forEach(k => { n[k] = { ...n[k], prixIA: null, noteIA: "" }; });
+      return n;
+    });
+    setPrixIAActifs(false);
+  };
+
+  const nbActifsTotal = Object.values(detail).filter(d => d.actif).length;
+
+  return (
+    <div>
+      <STitle accent={T.orange}>🔨 Calculateur de travaux détaillé — {annee}</STitle>
+
+      {/* Région + IA */}
+      <Card style={{ padding: 16, marginBottom: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, marginBottom: 12, alignItems: "end" }}>
+          <div>
+            <label style={{ display: "block", fontSize: 11, color: T.textMuted, marginBottom: 5, textTransform: "uppercase", fontWeight: 600 }}>📍 Région</label>
+            <select value={region} onChange={e => { setRegion(e.target.value); resetIA(); }} style={{ width: "100%", background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: "7px 10px", fontSize: 12, color: T.text, outline: "none" }}>
+              {REGIONS_FR.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+          <button onClick={lancerIA} disabled={loading || nbActifsTotal === 0} style={{ padding: "8px 14px", background: loading ? T.surface3 : prixIAActifs ? T.green+"20" : "linear-gradient(135deg,#7c3aed,#4a9eff)", color: prixIAActifs ? T.green : "white", border: `1px solid ${prixIAActifs ? T.green+"40" : "transparent"}`, borderRadius: 9, fontWeight: 700, fontSize: 12, cursor: loading || nbActifsTotal === 0 ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}>
+            {loading ? "⏳ Analyse..." : prixIAActifs ? "✅ Prix IA actifs" : `🤖 Prix IA ${annee}`}
+          </button>
+        </div>
+        {error && <div style={{ color: T.red, fontSize: 11 }}>⚠️ {error}</div>}
+        {prixIAActifs && <div style={{ fontSize: 10, color: T.green }}>✓ Prix actualisés {annee} pour {region} — {nbActifsTotal} sous-poste(s)</div>}
+      </Card>
+
+      {/* Totaux */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+        <Card style={{ padding: 14, textAlign: "center", border: `1px solid ${T.orange}30` }}>
+          <div style={{ fontSize: 10, color: T.textMuted, textTransform: "uppercase", marginBottom: 3 }}>Total HT ({nbActifsTotal} postes)</div>
+          <div style={{ fontSize: 26, fontWeight: 400, fontFamily: "DM Serif Display, serif", color: T.orange }}>{fmtEur(total)}</div>
+        </Card>
+        <Card style={{ padding: 14, textAlign: "center", border: `1px solid ${T.red}30` }}>
+          <div style={{ fontSize: 10, color: T.textMuted, textTransform: "uppercase", marginBottom: 3 }}>
+            Avec imprévus : {[5,10,15,20].map(m => <button key={m} onClick={() => setMarge(m)} style={{ marginLeft: 4, padding: "1px 6px", border: `1px solid ${marge===m?T.gold+"60":T.border}`, borderRadius: 4, background: marge===m?T.gold+"18":"transparent", color: marge===m?T.gold:T.textMuted, fontSize: 9, fontWeight: 700, cursor: "pointer" }}>{m}%</button>)}
+          </div>
+          <div style={{ fontSize: 26, fontWeight: 400, fontFamily: "DM Serif Display, serif", color: T.red }}>{fmtEur(totalAvecMarge)}</div>
+        </Card>
+      </div>
+
+      {/* Postes détaillés */}
+      <div style={{ display: "grid", gap: 8, marginBottom: 16 }}>
+        {POSTES_TRAVAUX_DETAIL.map(poste => {
+          const isOpen = openPostes[poste.id];
+          const pTotal = totalParPoste.find(p => p.id === poste.id);
+          return (
+            <Card key={poste.id} style={{ overflow: "hidden" }}>
+              {/* Header poste */}
+              <div onClick={() => togglePoste(poste.id)} style={{ padding: "12px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, background: pTotal.nbActifs > 0 ? T.orange+"08" : T.surface2 }}>
+                <span style={{ fontSize: 18 }}>{poste.icon}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: pTotal.nbActifs > 0 ? T.text : T.textSub }}>{poste.label}</div>
+                  <div style={{ fontSize: 11, color: T.textMuted }}>{pTotal.nbActifs > 0 ? `${pTotal.nbActifs} sous-poste(s) sélectionné(s)` : `${poste.sousPostes.length} sous-postes disponibles`}</div>
+                </div>
+                {pTotal.total > 0 && <div style={{ fontSize: 14, fontWeight: 700, color: T.orange, marginRight: 8 }}>{fmtEur(pTotal.total)}</div>}
+                <span style={{ color: T.textMuted, fontSize: 12 }}>{isOpen ? "▲" : "▼"}</span>
+              </div>
+
+              {/* Sous-postes */}
+              {isOpen && (
+                <div style={{ padding: "8px 14px 12px", background: T.surface }}>
+                  {poste.sousPostes.map(sp => {
+                    const d = detail[sp.id];
+                    const prixUnit = getPrixUnit(sp, d);
+                    const prixTotal = prixUnit * d.quantite;
+                    return (
+                      <div key={sp.id} style={{ background: d.actif ? T.surface2 : "transparent", border: `1px solid ${d.actif ? T.orange+"30" : T.border}`, borderRadius: 8, padding: "9px 11px", marginBottom: 6 }}>
+                        {/* Ligne titre */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }} onClick={() => toggleSP(sp.id)}>
+                          <div style={{ width: 18, height: 18, border: `2px solid ${d.actif ? T.orange : T.border}`, borderRadius: 4, background: d.actif ? T.orange : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            {d.actif && <span style={{ color: T.bg, fontSize: 11, fontWeight: 900 }}>✓</span>}
+                          </div>
+                          <span style={{ flex: 1, fontSize: 12, color: d.actif ? T.text : T.textSub, fontWeight: d.actif ? 600 : 400 }}>{sp.label}</span>
+                          {d.actif && <span style={{ fontSize: 12, fontWeight: 700, color: T.orange }}>{fmtEur(prixTotal)}</span>}
+                          <span style={{ fontSize: 10, color: T.textMuted }}>{fmtEur(Math.round((sp.prixMin+sp.prixMax)/2))}/{sp.unite}</span>
+                        </div>
+                        {/* Détails si actif */}
+                        {d.actif && (
+                          <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                            {/* Quantité */}
+                            <div>
+                              <div style={{ fontSize: 9, color: T.textMuted, marginBottom: 3, textTransform: "uppercase" }}>Quantité ({sp.unite})</div>
+                              <div style={{ display: "flex", alignItems: "center", background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6 }}>
+                                <input type="number" value={d.quantite} min={1} onFocus={e => e.target.select()} onChange={e => updateSP(sp.id, "quantite", parseFloat(e.target.value)||1)} style={{ flex: 1, border: "none", background: "transparent", padding: "5px 7px", fontSize: 12, color: T.text, outline: "none" }} />
+                                <span style={{ padding: "0 6px", fontSize: 9, color: T.textMuted }}>{sp.unite}</span>
+                              </div>
+                            </div>
+                            {/* Niveau */}
+                            <div>
+                              <div style={{ fontSize: 9, color: T.textMuted, marginBottom: 3, textTransform: "uppercase" }}>Niveau</div>
+                              <div style={{ display: "flex", gap: 3 }}>
+                                {[["eco","Éco"],["standard","Std"],["premium","Pro"]].map(([val, lbl]) => (
+                                  <button key={val} onClick={() => {
+                                    const newNiveau = val;
+                                    let newPrixIA = d.prixIA;
+                                    if (d.prixMin !== undefined && d.prixIA !== null) {
+                                      newPrixIA = val === "eco" ? d.prixMin : val === "premium" ? d.prixMax : Math.round((d.prixMin+d.prixMax)/2);
+                                    }
+                                    updateSP(sp.id, "niveau", newNiveau);
+                                    if (newPrixIA !== d.prixIA) updateSP(sp.id, "prixIA", newPrixIA);
+                                  }} style={{ flex: 1, padding: "4px 2px", border: `1px solid ${d.niveau===val?T.gold+"60":T.border}`, borderRadius: 4, background: d.niveau===val?T.gold+"18":"transparent", color: d.niveau===val?T.gold:T.textMuted, fontSize: 9, fontWeight: 700, cursor: "pointer" }}>{lbl}</button>
+                                ))}
+                              </div>
+                            </div>
+                            {/* Prix */}
+                            <div>
+                              <div style={{ fontSize: 9, color: T.textMuted, marginBottom: 3, textTransform: "uppercase" }}>Prix unitaire</div>
+                              <div style={{ background: T.surface, border: `1px solid ${prixIAActifs && d.prixIA !== null ? T.green+"40" : T.border}`, borderRadius: 6, padding: "5px 7px", fontSize: 12, fontWeight: 700, color: prixIAActifs && d.prixIA !== null ? T.green : T.text }}>
+                                {fmtEur(prixUnit)}/{sp.unite}
+                                {prixIAActifs && d.prixIA !== null && <span style={{ fontSize: 8, color: T.green, display: "block" }}>IA {annee}</span>}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        {d.actif && d.noteIA && <div style={{ marginTop: 6, fontSize: 10, color: T.blue }}>🤖 {d.noteIA}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+          );
+        })}
+      </div>
+
+      {total > 0 && (
+        <button onClick={() => onChange({ ...bien, travaux: totalAvecMarge })} style={{ width: "100%", background: `linear-gradient(135deg,${T.orange},${T.gold})`, color: T.bg, border: "none", borderRadius: 12, padding: "14px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+          ✅ Appliquer {fmtEur(totalAvecMarge)} dans le simulateur ({nbActifsTotal} postes)
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── SIMULATION REVENTE ───────────────────────────────────────────────────────
+function SimulationRevente({ bien, res }) {
+  const [annee, setAnnee] = useState(10);
+  const [tauxReval, setTauxReval] = useState(2);
+  const rev = useMemo(() => calculerRevente(bien, res, annee, tauxReval), [bien, res, annee, tauxReval]);
+
+  const data = useMemo(() => Array.from({ length: Math.min(bien.duree, 25) }, (_, i) => {
+    const a = i + 1;
+    const r = calculerRevente(bien, res, a, tauxReval);
+    return { annee: `An ${a}`, gainNet: Math.round(r.gainTotal), prixRevente: Math.round(r.prixRevente), capitalRestant: Math.round(r.capitalRestantRevente), impot: Math.round(r.impotPV) };
+  }), [bien, res, tauxReval]);
+
+  const gainColor = rev.gainTotal >= 0 ? T.green : T.red;
+
+  return (
+    <div>
+      <STitle accent={T.purple}>📈 Simulation de revente</STitle>
+      <Card style={{ padding: 20, marginBottom: 18 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+          <div>
+            <label style={{ display: "block", fontSize: 11, color: T.textMuted, marginBottom: 6, textTransform: "uppercase", fontWeight: 600 }}>Année de revente</label>
+            <div style={{ display: "flex", gap: 5, marginBottom: 8, flexWrap: "wrap" }}>
+              {[3, 5, 10, 15, 20].map(a => (
+                <button key={a} onClick={() => setAnnee(a)} style={{ padding: "6px 12px", border: `1px solid ${annee === a ? T.purple + "60" : T.border}`, borderRadius: 7, background: annee === a ? T.purple + "18" : T.surface2, color: annee === a ? T.purple : T.textMuted, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>An {a}</button>
+              ))}
+            </div>
+            <input type="range" min={1} max={Math.min(bien.duree, 25)} value={annee} onChange={e => setAnnee(parseInt(e.target.value))} style={{ width: "100%", accentColor: T.purple }} />
+            <div style={{ textAlign: "center", fontSize: 12, color: T.purple, fontWeight: 700 }}>Année {annee}</div>
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 11, color: T.textMuted, marginBottom: 6, textTransform: "uppercase", fontWeight: 600 }}>Revalorisation annuelle</label>
+            <div style={{ display: "flex", gap: 5, marginBottom: 8 }}>
+              {[0, 1, 2, 3, 5].map(t => (
+                <button key={t} onClick={() => setTauxReval(t)} style={{ flex: 1, padding: "6px 4px", border: `1px solid ${tauxReval === t ? T.gold + "60" : T.border}`, borderRadius: 7, background: tauxReval === t ? T.gold + "18" : T.surface2, color: tauxReval === t ? T.gold : T.textMuted, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>{t}%</button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Card>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 18 }}>
+        {[
+          ["Prix de revente", fmtEur(Math.round(rev.prixRevente)), T.blue, ""],
+          ["Plus-value nette", fmtEur(Math.round(rev.plusValueNette)), T.green, `Impôt PV: ${fmtEur(Math.round(rev.impotPV))}`],
+          ["Capital restant dû", fmtEur(Math.round(rev.capitalRestantRevente)), T.orange, `Abattement IR: ${rev.abatIR}%`],
+          ["Gain total net", fmtEur(Math.round(rev.gainTotal)), gainColor, `Rendement: ${fmt(rev.rendementGlobal, 1)}%`],
+        ].map(([label, value, color, sub]) => (
+          <Card key={label} style={{ padding: 16, textAlign: "center", border: `1px solid ${color}30` }}>
+            <div style={{ fontSize: 10, color: T.textMuted, textTransform: "uppercase", marginBottom: 6 }}>{label}</div>
+            <div style={{ fontSize: 20, fontWeight: 400, fontFamily: "DM Serif Display, serif", color }}>{value}</div>
+            {sub && <div style={{ fontSize: 10, color: T.textMuted, marginTop: 4 }}>{sub}</div>}
+          </Card>
+        ))}
+      </div>
+      <Card style={{ padding: 20, marginBottom: 18 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 14 }}>📊 Évolution du gain net selon l'année de revente</div>
+        <ResponsiveContainer width="100%" height={220}>
+          <AreaChart data={data}>
+            <defs>
+              <linearGradient id="gainGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={T.green} stopOpacity={0.3} />
+                <stop offset="95%" stopColor={T.green} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke={T.border} />
+            <XAxis dataKey="annee" stroke={T.textMuted} tick={{ fontSize: 10 }} />
+            <YAxis stroke={T.textMuted} tick={{ fontSize: 10 }} tickFormatter={v => Math.round(v/1000) + "k€"} />
+            <Tooltip formatter={v => fmtEur(Math.round(v))} contentStyle={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 12 }} />
+            <Area type="monotone" dataKey="gainNet" stroke={T.green} fill="url(#gainGrad)" strokeWidth={2} name="Gain net" />
+            <Area type="monotone" dataKey="prixRevente" stroke={T.blue} fill="none" strokeWidth={1.5} strokeDasharray="4 2" name="Prix revente" />
+          </AreaChart>
+        </ResponsiveContainer>
+      </Card>
+      <Card style={{ padding: 16, background: rev.gainTotal >= 0 ? T.green + "08" : T.red + "08", border: `1px solid ${gainColor}30` }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: gainColor, marginBottom: 6 }}>
+          {rev.gainTotal >= 0 ? "✅ Opération rentable" : "⚠️ Opération déficitaire"} à {annee} an{annee > 1 ? "s" : ""}
+        </div>
+        <div style={{ fontSize: 12, color: T.textSub, lineHeight: 1.7 }}>
+          Après {annee} ans : revente à {fmtEur(Math.round(rev.prixRevente))}, cash cumulé {fmtEur(Math.round(rev.cashTotalRecupere))}, impôt plus-value {fmtEur(Math.round(rev.impotPV))} ({rev.abatIR}% d'abattement). Gain net total : <strong style={{ color: gainColor }}>{fmtEur(Math.round(rev.gainTotal))}</strong> pour un apport de {fmtEur(bien.apport)}.
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ─── ALERTE RENTABILITÉ ───────────────────────────────────────────────────────
+function AlerteRentabilite({ bien, res, onChange }) {
+  const [cibleRenta, setCibleRenta] = useState(8);
+  const [cibleCash, setCibleCash] = useState(200);
+  const [cibleScore, setCibleScore] = useState(18);
+
+  // Prix max pour atteindre la renta nette cible
+  const charges = res.charges;
+  const loyerAnnuel = res.loyerAnnuel;
+  const prixMaxRenta = loyerAnnuel > 0 ? Math.round((loyerAnnuel - charges) / (cibleRenta / 100)) : 0;
+  const prixMaxNotaire = Math.round(prixMaxRenta / 1.085);
+
+  // Loyer min pour le cash-flow cible
+  const loyerMinCash = Math.round(res.mensualiteTotale + (charges / 12) + cibleCash);
+  const loyerMinRenta = loyerAnnuel > 0 ? Math.round(Math.sqrt((cibleRenta / 100) * res.coutTotal * loyerAnnuel / 12 * 12)) : 0;
+
+  // Écarts actuels
+  const ecartPrix = bien.prix - prixMaxNotaire;
+  const ecartLoyer = loyerMinCash - (bien.typeBien === "Immeuble" && bien.lots?.length ? bien.lots.reduce((s,l)=>s+l.loyer,0) : bien.loyer);
+
+  return (
+    <div>
+      <STitle accent={T.green}>🎯 Calculateur de rentabilité cible</STitle>
+      <Card style={{ padding: 20, marginBottom: 16 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, marginBottom: 14, textTransform: "uppercase" }}>Tes objectifs</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+          <div>
+            <label style={{ display: "block", fontSize: 11, color: T.textMuted, marginBottom: 6, textTransform: "uppercase" }}>Renta nette cible</label>
+            <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
+              {[5, 6, 7, 8, 10].map(v => (
+                <button key={v} onClick={() => setCibleRenta(v)} style={{ flex: 1, padding: "5px 2px", border: `1px solid ${cibleRenta === v ? T.green + "60" : T.border}`, borderRadius: 6, background: cibleRenta === v ? T.green + "18" : T.surface2, color: cibleRenta === v ? T.green : T.textMuted, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>{v}%</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 11, color: T.textMuted, marginBottom: 6, textTransform: "uppercase" }}>Cash-flow min/mois</label>
+            <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
+              {[0, 100, 200, 300, 500].map(v => (
+                <button key={v} onClick={() => setCibleCash(v)} style={{ flex: 1, padding: "5px 2px", border: `1px solid ${cibleCash === v ? T.blue + "60" : T.border}`, borderRadius: 6, background: cibleCash === v ? T.blue + "18" : T.surface2, color: cibleCash === v ? T.blue : T.textMuted, fontWeight: 700, fontSize: 10, cursor: "pointer" }}>{v}€</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 11, color: T.textMuted, marginBottom: 6, textTransform: "uppercase" }}>Score minimum</label>
+            <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
+              {[12, 15, 18, 20, 22].map(v => (
+                <button key={v} onClick={() => setCibleScore(v)} style={{ flex: 1, padding: "5px 2px", border: `1px solid ${cibleScore === v ? T.gold + "60" : T.border}`, borderRadius: 6, background: cibleScore === v ? T.gold + "18" : T.surface2, color: cibleScore === v ? T.gold : T.textMuted, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>{v}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
+        {/* Prix max */}
+        <Card style={{ padding: 20, border: `1px solid ${ecartPrix <= 0 ? T.green + "40" : T.red + "40"}` }}>
+          <div style={{ fontSize: 11, color: T.textMuted, textTransform: "uppercase", marginBottom: 8 }}>💰 Prix max d'achat</div>
+          <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 4 }}>Pour atteindre {cibleRenta}% de renta nette :</div>
+          <div style={{ fontSize: 28, fontWeight: 400, fontFamily: "DM Serif Display, serif", color: ecartPrix <= 0 ? T.green : T.red, marginBottom: 6 }}>{fmtEur(prixMaxNotaire)}</div>
+          <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 10 }}>Frais notaire inclus : {fmtEur(prixMaxRenta)}</div>
+          {ecartPrix > 0 ? (
+            <div style={{ background: T.red + "12", border: `1px solid ${T.red}25`, borderRadius: 8, padding: "8px 12px", fontSize: 12, color: T.red }}>
+              ⚠️ Tu dois négocier <strong>{fmtEur(ecartPrix)}</strong> de baisse
+              <button onClick={() => onChange({ ...bien, prix: prixMaxNotaire })} style={{ display: "block", marginTop: 6, background: T.red + "20", border: `1px solid ${T.red}40`, borderRadius: 6, padding: "4px 10px", color: T.red, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Appliquer ce prix</button>
+            </div>
+          ) : (
+            <div style={{ background: T.green + "12", border: `1px solid ${T.green}25`, borderRadius: 8, padding: "8px 12px", fontSize: 12, color: T.green }}>✅ Prix actuel OK pour cet objectif</div>
+          )}
+        </Card>
+
+        {/* Loyer min */}
+        <Card style={{ padding: 20, border: `1px solid ${ecartLoyer <= 0 ? T.green + "40" : T.orange + "40"}` }}>
+          <div style={{ fontSize: 11, color: T.textMuted, textTransform: "uppercase", marginBottom: 8 }}>🏠 Loyer minimum</div>
+          <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 4 }}>Pour un cash-flow de +{cibleCash}€/mois :</div>
+          <div style={{ fontSize: 28, fontWeight: 400, fontFamily: "DM Serif Display, serif", color: ecartLoyer <= 0 ? T.green : T.orange, marginBottom: 6 }}>{fmtEur(loyerMinCash)}/mois</div>
+          <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 10 }}>Mensualité : {fmtEur(Math.round(res.mensualiteTotale))} + Charges : {fmtEur(Math.round(res.charges / 12))}</div>
+          {ecartLoyer > 0 ? (
+            <div style={{ background: T.orange + "12", border: `1px solid ${T.orange}25`, borderRadius: 8, padding: "8px 12px", fontSize: 12, color: T.orange }}>
+              📊 Il te manque <strong>{fmtEur(ecartLoyer)}</strong>/mois de loyer
+            </div>
+          ) : (
+            <div style={{ background: T.green + "12", border: `1px solid ${T.green}25`, borderRadius: 8, padding: "8px 12px", fontSize: 12, color: T.green }}>✅ Loyer actuel suffisant</div>
+          )}
+        </Card>
+      </div>
+
+      {/* Résumé */}
+      <Card style={{ padding: 20, background: res.score >= cibleScore ? T.green + "06" : T.red + "06", border: `1px solid ${res.score >= cibleScore ? T.green : T.red}25` }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: res.score >= cibleScore ? T.green : T.red, marginBottom: 12 }}>
+          {res.score >= cibleScore ? "🎯 Objectifs atteints !" : "📋 Actions nécessaires"}
+        </div>
+        <div style={{ display: "grid", gap: 8 }}>
+          {[
+            [res.rentaNette >= cibleRenta, `Renta nette ${fmtPct(res.rentaNette)} / cible ${cibleRenta}%`],
+            [res.cashflowMensuel >= cibleCash, `Cash-flow ${fmtEur(Math.round(res.cashflowMensuel))}/mois / cible ${cibleCash}€`],
+            [res.score >= cibleScore, `Score ${res.score}/25 / cible ${cibleScore}/25`],
+            [res.dscr >= 1.2, `DSCR ${fmt(res.dscr, 2)} / minimum recommandé 1.2`],
+          ].map(([ok, label], i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: ok ? T.green : T.red }}>
+              <span>{ok ? "✅" : "❌"}</span> {label}
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ─── MODE MARCHAND DE BIENS ──────────────────────────────────────────────────
+function MarchandBiens({ bien, res }) {
+  const [prixRevente, setPrixRevente] = useState(Math.round(bien.prix * 1.20));
+  const [dureePortage, setDureePortage] = useState(12);
+  const [coutFinancement, setCoutFinancement] = useState(bien.taux);
+  const [fraisAgence, setFraisAgence] = useState(5);
+  const [tvaOption, setTvaOption] = useState("marge"); // marge ou totale
+
+  const surface = bien.typeBien === "Immeuble" && bien.lots?.length
+    ? bien.lots.reduce((s, l) => s + (l.surface || 0), 0) : bien.surface;
+
+  // Calculs marchand de biens
+  const prixAchatHT = bien.prix;
+  const fraisNotaire = bien.prix * 0.085;
+  const coutTravaux = bien.travaux || 0;
+  const fraisPortage = (bien.prix * coutFinancement / 100) * (dureePortage / 12);
+  const fraisAgenceMontant = prixRevente * fraisAgence / 100;
+  const coutTotal = prixAchatHT + fraisNotaire + coutTravaux + fraisPortage + fraisAgenceMontant;
+
+  // TVA sur marge
+  const marge = prixRevente - prixAchatHT;
+  const tvaBase = tvaOption === "marge" ? marge : prixRevente;
+  const tva = Math.max(0, tvaBase * 0.20);
+  const margeNette = prixRevente - coutTotal - tva;
+  const margePct = ((margeNette / coutTotal) * 100);
+
+  // IS sur bénéfice
+  const isBase = Math.max(0, margeNette);
+  const is = isBase <= 42500 ? isBase * 0.15 : 42500 * 0.15 + (isBase - 42500) * 0.25;
+  const beneficeNet = margeNette - is;
+  const roi = coutTotal > 0 ? (beneficeNet / coutTotal) * 100 : 0;
+  const roiAnnualise = dureePortage > 0 ? (roi / dureePortage) * 12 : 0;
+
+  // Prix de revente minimum
+  const prixMinRevente = Math.round(coutTotal / (1 - 0.20 * (tvaOption === "marge" ? 0 : 1)) + tva);
+  const prixMinRentable = Math.round(coutTotal * 1.10); // 10% marge mini
+
+  const margeColor = margeNette >= 0 ? T.green : T.red;
+
+  return (
+    <div>
+      <STitle accent={T.purple}>🏗️ Mode Marchand de Biens</STitle>
+
+      {/* Paramètres */}
+      <Card style={{ padding: 18, marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+          <div>
+            <label style={{ display: "block", fontSize: 11, color: T.textMuted, marginBottom: 4, textTransform: "uppercase", fontWeight: 600 }}>Prix de revente visé</label>
+            <div style={{ display: "flex", alignItems: "center", background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 9, overflow: "hidden" }}>
+              <input type="number" value={prixRevente} min={0} step={1000} onFocus={e => e.target.select()} onChange={e => setPrixRevente(parseFloat(e.target.value) || 0)} style={{ flex: 1, border: "none", background: "transparent", padding: "8px 11px", fontSize: 13, color: T.gold, fontWeight: 700, outline: "none" }} />
+              <span style={{ padding: "0 9px", color: T.textMuted, fontSize: 11 }}>€</span>
+            </div>
+            <div style={{ fontSize: 10, color: T.textMuted, marginTop: 3 }}>{surface > 0 ? `${Math.round(prixRevente / surface).toLocaleString("fr-FR")} €/m²` : ""}</div>
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 11, color: T.textMuted, marginBottom: 4, textTransform: "uppercase", fontWeight: 600 }}>Durée de portage</label>
+            <div style={{ display: "flex", gap: 5 }}>
+              {[6, 12, 18, 24].map(d => (
+                <button key={d} onClick={() => setDureePortage(d)} style={{ flex: 1, padding: "7px 4px", border: `1px solid ${dureePortage === d ? T.purple + "60" : T.border}`, borderRadius: 7, background: dureePortage === d ? T.purple + "18" : T.surface2, color: dureePortage === d ? T.purple : T.textMuted, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>{d}m</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 11, color: T.textMuted, marginBottom: 4, textTransform: "uppercase", fontWeight: 600 }}>Taux financement %</label>
+            <div style={{ display: "flex", alignItems: "center", background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 9, overflow: "hidden" }}>
+              <input type="number" value={coutFinancement} min={0} step={0.1} onFocus={e => e.target.select()} onChange={e => setCoutFinancement(parseFloat(e.target.value) || 0)} style={{ flex: 1, border: "none", background: "transparent", padding: "8px 11px", fontSize: 13, color: T.text, outline: "none" }} />
+              <span style={{ padding: "0 9px", color: T.textMuted, fontSize: 11 }}>%</span>
+            </div>
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 11, color: T.textMuted, marginBottom: 4, textTransform: "uppercase", fontWeight: 600 }}>Frais agence vente %</label>
+            <div style={{ display: "flex", alignItems: "center", background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 9, overflow: "hidden" }}>
+              <input type="number" value={fraisAgence} min={0} step={0.5} onFocus={e => e.target.select()} onChange={e => setFraisAgence(parseFloat(e.target.value) || 0)} style={{ flex: 1, border: "none", background: "transparent", padding: "8px 11px", fontSize: 13, color: T.text, outline: "none" }} />
+              <span style={{ padding: "0 9px", color: T.textMuted, fontSize: 11 }}>%</span>
+            </div>
+          </div>
+        </div>
+
+        {/* TVA */}
+        <div>
+          <label style={{ display: "block", fontSize: 11, color: T.textMuted, marginBottom: 6, textTransform: "uppercase", fontWeight: 600 }}>Régime TVA</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            {[["marge","TVA sur marge","Achat + revente immeuble ancien"],["totale","TVA sur prix total","Immeuble neuf ou VEFA"]].map(([val, lbl, desc]) => (
+              <button key={val} onClick={() => setTvaOption(val)} style={{ flex: 1, padding: "10px", border: `1px solid ${tvaOption === val ? T.purple + "60" : T.border}`, borderRadius: 9, background: tvaOption === val ? T.purple + "18" : T.surface2, cursor: "pointer", textAlign: "left" }}>
+                <div style={{ fontWeight: 700, fontSize: 12, color: tvaOption === val ? T.purple : T.text }}>{lbl}</div>
+                <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>{desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </Card>
+
+      {/* Résultats clés */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
+        <Card style={{ padding: 16, textAlign: "center", border: `1px solid ${margeColor}30` }}>
+          <div style={{ fontSize: 10, color: T.textMuted, textTransform: "uppercase", marginBottom: 4 }}>Bénéfice net IS</div>
+          <div style={{ fontSize: 24, fontWeight: 400, fontFamily: "DM Serif Display, serif", color: margeColor }}>{fmtEur(Math.round(beneficeNet))}</div>
+          <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>après TVA + IS</div>
+        </Card>
+        <Card style={{ padding: 16, textAlign: "center", border: `1px solid ${T.gold}30` }}>
+          <div style={{ fontSize: 10, color: T.textMuted, textTransform: "uppercase", marginBottom: 4 }}>ROI annualisé</div>
+          <div style={{ fontSize: 24, fontWeight: 400, fontFamily: "DM Serif Display, serif", color: T.gold }}>{fmt(roiAnnualise, 1)}%</div>
+          <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>sur {dureePortage} mois</div>
+        </Card>
+        <Card style={{ padding: 16, textAlign: "center", border: `1px solid ${T.blue}30` }}>
+          <div style={{ fontSize: 10, color: T.textMuted, textTransform: "uppercase", marginBottom: 4 }}>Marge brute</div>
+          <div style={{ fontSize: 24, fontWeight: 400, fontFamily: "DM Serif Display, serif", color: T.blue }}>{fmt(margePct, 1)}%</div>
+          <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>avant IS</div>
+        </Card>
+      </div>
+
+      {/* Décomposition des coûts */}
+      <Card style={{ padding: 18, marginBottom: 16 }}>
+        <STitle accent={T.purple}>📊 Décomposition des coûts</STitle>
+        {[
+          ["Prix d'achat", prixAchatHT, T.text],
+          ["Frais de notaire (8,5%)", fraisNotaire, T.textSub],
+          ["Travaux", coutTravaux, T.orange],
+          ["Frais de portage", fraisPortage, T.blue],
+          ["Frais d'agence vente", fraisAgenceMontant, T.textSub],
+          ["TVA (" + (tvaOption === "marge" ? "sur marge" : "totale") + ")", tva, T.red],
+          ["IS (15%/25%)", is, T.red],
+        ].map(([label, val, color], i) => (
+          <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${T.border}` }}>
+            <span style={{ fontSize: 12, color: T.textSub }}>{label}</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color }}>{fmtEur(Math.round(val))}</span>
+          </div>
+        ))}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", marginTop: 4 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Prix de vente</span>
+          <span style={{ fontSize: 16, fontWeight: 700, color: T.gold }}>{fmtEur(prixRevente)}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: beneficeNet >= 0 ? T.green + "12" : T.red + "12", border: `1px solid ${beneficeNet >= 0 ? T.green : T.red}30`, borderRadius: 9 }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: margeColor }}>💰 Bénéfice net final</span>
+          <span style={{ fontSize: 18, fontWeight: 700, color: margeColor }}>{fmtEur(Math.round(beneficeNet))}</span>
+        </div>
+      </Card>
+
+      {/* Prix de revente minimum */}
+      <Card style={{ padding: 18, border: `1px solid ${T.gold}30` }}>
+        <STitle accent={T.gold}>🎯 Seuils à retenir</STitle>
+        <div style={{ display: "grid", gap: 10 }}>
+          <div style={{ background: T.surface2, borderRadius: 9, padding: "12px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: 12, color: T.textMuted }}>Prix de revente minimum (seuil 0)</div>
+              <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>Pour ne pas perdre d'argent</div>
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: T.red }}>{fmtEur(Math.round(coutTotal + tva))}</div>
+          </div>
+          <div style={{ background: T.surface2, borderRadius: 9, padding: "12px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: 12, color: T.textMuted }}>Prix pour 10% de marge nette</div>
+              <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>Minimum recommandé marchand de biens</div>
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: T.orange }}>{fmtEur(Math.round(coutTotal * 1.10 + tva))}</div>
+          </div>
+          <div style={{ background: T.surface2, borderRadius: 9, padding: "12px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: 12, color: T.textMuted }}>Prix pour 20% de marge nette</div>
+              <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>Objectif confortable</div>
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: T.green }}>{fmtEur(Math.round(coutTotal * 1.20 + tva))}</div>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ─── TRI ──────────────────────────────────────────────────────────────────────
+function CalculateurTRI({ bien, res }) {
+  const [tauxReval, setTauxReval] = useState(2);
+  const [anneeRevente, setAnneeRevente] = useState(10);
+
+  const surface = bien.typeBien === "Immeuble" && bien.lots?.length
+    ? bien.lots.reduce((s, l) => s + (l.surface || 0), 0) : bien.surface;
+
+  const loyerMensuel = bien.typeBien === "Immeuble" && bien.lots?.length
+    ? bien.lots.reduce((s, l) => s + (l.loyer || 0), 0) : bien.loyer;
+
+  // Calcul TRI par bissection
+  const calculerTRI = (fluxInitial, flux) => {
+    let lo = -0.99, hi = 10.0;
+    for (let i = 0; i < 200; i++) {
+      const mid = (lo + hi) / 2;
+      let npv = fluxInitial;
+      flux.forEach((f, t) => { npv += f / Math.pow(1 + mid, t + 1); });
+      if (Math.abs(npv) < 0.01) return mid * 100;
+      if (npv > 0) lo = mid; else hi = mid;
+    }
+    return ((lo + hi) / 2) * 100;
+  };
+
+  const triData = useMemo(() => {
+    const results = [];
+    for (let annee = 3; annee <= Math.min(bien.duree, 25); annee++) {
+      const rev = calculerRevente(bien, res, annee, tauxReval);
+      const fluxInitial = -(res.aEmprunter > 0 ? bien.apport + bien.travaux : res.coutTotal);
+      const flux = [];
+      for (let m = 1; m <= annee * 12; m++) {
+        flux.push(loyerMensuel - res.mensualiteTotale - (res.charges / 12));
+      }
+      // Ajouter prix de revente net - capital restant
+      const idx = Math.min(annee * 12 - 1, res.amortissement.length - 1);
+      const capRestant = idx >= 0 ? res.amortissement[idx].capitalRestant : 0;
+      flux[flux.length - 1] += rev.plusValueNette - capRestant;
+
+      // TRI annuel
+      const fluxAnnuels = [];
+      for (let a = 0; a < annee; a++) {
+        const slice = flux.slice(a * 12, (a + 1) * 12);
+        fluxAnnuels.push(slice.reduce((s, v) => s + v, 0));
+      }
+      const tri = calculerTRI(fluxInitial, fluxAnnuels);
+      results.push({ annee, tri: Math.round(tri * 100) / 100, gainNet: Math.round(rev.gainTotal), prixRevente: Math.round(rev.prixRevente) });
+    }
+    return results;
+  }, [bien, res, tauxReval, loyerMensuel]);
+
+  const triActuel = triData.find(d => d.annee === anneeRevente);
+  const triMax = triData.length ? triData.reduce((a, b) => a.tri > b.tri ? a : b) : null;
+  const triColor = triActuel ? (triActuel.tri >= 10 ? T.green : triActuel.tri >= 5 ? T.gold : T.red) : T.textMuted;
+
+  return (
+    <div>
+      <STitle accent={T.blue}>📊 Taux de Rendement Interne (TRI)</STitle>
+
+      <Card style={{ padding: 18, marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div>
+            <label style={{ display: "block", fontSize: 11, color: T.textMuted, marginBottom: 6, textTransform: "uppercase", fontWeight: 600 }}>Revalorisation annuelle</label>
+            <div style={{ display: "flex", gap: 5 }}>
+              {[0, 1, 2, 3, 5].map(t => (
+                <button key={t} onClick={() => setTauxReval(t)} style={{ flex: 1, padding: "7px 4px", border: `1px solid ${tauxReval === t ? T.gold + "60" : T.border}`, borderRadius: 7, background: tauxReval === t ? T.gold + "18" : T.surface2, color: tauxReval === t ? T.gold : T.textMuted, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>{t}%</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label style={{ display: "block", fontSize: 11, color: T.textMuted, marginBottom: 6, textTransform: "uppercase", fontWeight: 600 }}>Année de revente simulée</label>
+            <input type="range" min={3} max={Math.min(bien.duree, 25)} value={anneeRevente} onChange={e => setAnneeRevente(parseInt(e.target.value))} style={{ width: "100%", accentColor: T.blue }} />
+            <div style={{ textAlign: "center", fontSize: 12, color: T.blue, fontWeight: 700 }}>Année {anneeRevente}</div>
+          </div>
+        </div>
+      </Card>
+
+      {/* KPIs */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
+        <Card style={{ padding: 16, textAlign: "center", border: `1px solid ${triColor}30` }}>
+          <div style={{ fontSize: 10, color: T.textMuted, textTransform: "uppercase", marginBottom: 4 }}>TRI An {anneeRevente}</div>
+          <div style={{ fontSize: 28, fontWeight: 400, fontFamily: "DM Serif Display, serif", color: triColor }}>{triActuel ? fmt(triActuel.tri, 2) : "—"}%</div>
+          <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>annualisé</div>
+        </Card>
+        <Card style={{ padding: 16, textAlign: "center", border: `1px solid ${T.green}30` }}>
+          <div style={{ fontSize: 10, color: T.textMuted, textTransform: "uppercase", marginBottom: 4 }}>TRI optimal</div>
+          <div style={{ fontSize: 28, fontWeight: 400, fontFamily: "DM Serif Display, serif", color: T.green }}>{triMax ? fmt(triMax.tri, 2) : "—"}%</div>
+          <div style={{ fontSize: 10, color: T.green, marginTop: 2 }}>An {triMax?.annee}</div>
+        </Card>
+        <Card style={{ padding: 16, textAlign: "center", border: `1px solid ${T.gold}30` }}>
+          <div style={{ fontSize: 10, color: T.textMuted, textTransform: "uppercase", marginBottom: 4 }}>Gain net An {anneeRevente}</div>
+          <div style={{ fontSize: 22, fontWeight: 400, fontFamily: "DM Serif Display, serif", color: T.gold }}>{triActuel ? fmtEur(triActuel.gainNet) : "—"}</div>
+        </Card>
+      </div>
+
+      {/* Interprétation */}
+      <Card style={{ padding: 14, marginBottom: 16, background: triActuel?.tri >= 10 ? T.green+"08" : triActuel?.tri >= 5 ? T.gold+"08" : T.red+"08", border: `1px solid ${triColor}25` }}>
+        <div style={{ fontSize: 12, color: triColor, fontWeight: 700 }}>
+          {triActuel?.tri >= 15 ? "🚀 Excellent TRI — Investissement très performant" :
+           triActuel?.tri >= 10 ? "✅ Bon TRI — Comparable aux meilleurs fonds immobiliers" :
+           triActuel?.tri >= 5  ? "🟡 TRI correct — Mieux que le livret A, moins que la bourse" :
+           triActuel?.tri >= 0  ? "⚠️ TRI faible — Rentabilité insuffisante" : "🔴 TRI négatif — Opération perdante"}
+        </div>
+        <div style={{ fontSize: 11, color: T.textSub, marginTop: 6 }}>
+          Référence : livret A ~3% | Fonds euro ~4% | SCPI ~5-6% | Bourse long terme ~7-9% | Bon investissement immo &gt;10%
+        </div>
+      </Card>
+
+      {/* Graphique */}
+      <Card style={{ padding: 18 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: T.textSub, marginBottom: 12 }}>Évolution du TRI selon l'année de revente</div>
+        <ResponsiveContainer width="100%" height={220}>
+          <LineChart data={triData}>
+            <CartesianGrid strokeDasharray="3 3" stroke={T.border} />
+            <XAxis dataKey="annee" tickFormatter={v => `An ${v}`} tick={{ fontSize: 10, fill: T.textMuted }} />
+            <YAxis tickFormatter={v => `${v}%`} tick={{ fontSize: 10, fill: T.textMuted }} />
+            <Tooltip formatter={(v) => [`${fmt(v,2)}%`, "TRI"]} labelFormatter={v => `Année ${v}`} contentStyle={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8 }} />
+            <Line type="monotone" dataKey="tri" stroke={T.blue} strokeWidth={2.5} dot={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </Card>
+    </div>
+  );
+}
+
+// ─── CHECKLIST DE VISITE ──────────────────────────────────────────────────────
+const CHECKLIST_ITEMS = [
+  { id:"toiture_etat", cat:"🏚️ Toiture & Structure", label:"État de la toiture (tuiles, ardoises, zinc)", critique:true },
+  { id:"charpente", cat:"🏚️ Toiture & Structure", label:"Charpente (pas de déformation, insectes)", critique:true },
+  { id:"facade_etat", cat:"🏚️ Toiture & Structure", label:"Façade (fissures, infiltrations, état enduit)", critique:true },
+  { id:"sous_sol", cat:"🏚️ Toiture & Structure", label:"Sous-sol / cave (humidité, fissures murs)", critique:true },
+  { id:"planchers", cat:"🏚️ Toiture & Structure", label:"Planchers (pas de flexion, craquements)", critique:false },
+  { id:"humidite", cat:"💧 Humidité & Isolation", label:"Traces d'humidité sur murs et plafonds", critique:true },
+  { id:"isolation_combles", cat:"💧 Humidité & Isolation", label:"Isolation des combles (présence et état)", critique:false },
+  { id:"fenetre_etat", cat:"💧 Humidité & Isolation", label:"Fenêtres (simple/double vitrage, état joints)", critique:false },
+  { id:"vmc", cat:"💧 Humidité & Isolation", label:"Ventilation (VMC, aération salle de bain)", critique:false },
+  { id:"elec_tableau", cat:"⚡ Électricité", label:"Tableau électrique (disjoncteurs, mise aux normes)", critique:true },
+  { id:"elec_prises", cat:"⚡ Électricité", label:"Prises et interrupteurs (état, mise à la terre)", critique:false },
+  { id:"elec_gaine", cat:"⚡ Électricité", label:"Gaines électriques apparentes (état, protection)", critique:false },
+  { id:"plomberie_etat", cat:"🚿 Plomberie & Chauffage", label:"Plomberie (état tuyaux, rouille, fuites)", critique:true },
+  { id:"chaudiere", cat:"🚿 Plomberie & Chauffage", label:"Chaudière / chauffage (âge, entretien, marque)", critique:true },
+  { id:"wc_sdb", cat:"🚿 Plomberie & Chauffage", label:"WC et salle de bain (état, fonctionnement)", critique:false },
+  { id:"eau_chaude", cat:"🚿 Plomberie & Chauffage", label:"Eau chaude sanitaire (ballon, chauffe-eau)", critique:false },
+  { id:"dpe", cat:"📋 Diagnostics & Juridique", label:"DPE (classe énergie, étiquette GES)", critique:true },
+  { id:"amiante", cat:"📋 Diagnostics & Juridique", label:"Diagnostic amiante (avant 1997)", critique:true },
+  { id:"plomb", cat:"📋 Diagnostics & Juridique", label:"Diagnostic plomb (CREP avant 1949)", critique:true },
+  { id:"termites", cat:"📋 Diagnostics & Juridique", label:"Zones termites / mérule (selon région)", critique:false },
+  { id:"copro", cat:"📋 Diagnostics & Juridique", label:"Si copro : PV AG, charges, travaux votés", critique:true },
+  { id:"permis", cat:"📋 Diagnostics & Juridique", label:"Permis de construire / déclaration travaux", critique:false },
+  { id:"voisinage", cat:"🏘️ Environnement", label:"Nuisances sonores (rue, voisins, commerces)", critique:false },
+  { id:"stationnement", cat:"🏘️ Environnement", label:"Stationnement (parking, garage, facilité)", critique:false },
+  { id:"transports", cat:"🏘️ Environnement", label:"Transports en commun (arrêt, gare)", critique:false },
+  { id:"commerces", cat:"🏘️ Environnement", label:"Commerces et services à proximité", critique:false },
+  { id:"luminosite", cat:"🏘️ Environnement", label:"Luminosité (exposition, vis-à-vis)", critique:false },
+  { id:"notes_libres", cat:"📝 Notes", label:"Points spécifiques à vérifier", critique:false },
+];
+
+function ChecklistVisite({ bien }) {
+  const [checks, setChecks] = useState(() => Object.fromEntries(CHECKLIST_ITEMS.map(i => [i.id, null]))); // null=non vu, true=ok, false=pb
+  const [notes, setNotes] = useState({});
+  const [filtreCategorie, setFiltreCategorie] = useState("Tout");
+
+  const categories = ["Tout", ...new Set(CHECKLIST_ITEMS.map(i => i.cat))];
+  const itemsFiltres = filtreCategorie === "Tout" ? CHECKLIST_ITEMS : CHECKLIST_ITEMS.filter(i => i.cat === filtreCategorie);
+
+  const toggle = (id) => {
+    setChecks(prev => {
+      const cur = prev[id];
+      return { ...prev, [id]: cur === null ? true : cur === true ? false : null };
+    });
+  };
+
+  const total = CHECKLIST_ITEMS.length;
+  const vus = Object.values(checks).filter(v => v !== null).length;
+  const problemes = Object.values(checks).filter(v => v === false).length;
+  const pbCritiques = CHECKLIST_ITEMS.filter(i => i.critique && checks[i.id] === false).length;
+  const pct = Math.round(vus / total * 100);
+
+  const exportChecklist = () => {
+    const today = new Date().toLocaleDateString("fr-FR");
+    const lignes = categories.slice(1).map(cat => {
+      const items = CHECKLIST_ITEMS.filter(i => i.cat === cat);
+      const rows = items.map(i => {
+        const etat = checks[i.id] === true ? "✓ OK" : checks[i.id] === false ? "✗ PROBLÈME" : "— Non vérifié";
+        const note = notes[i.id] ? ` (${notes[i.id]})` : "";
+        return `  ${i.label}${i.critique ? " ⚠️" : ""} : ${etat}${note}`;
+      });
+      return `\n${cat}\n${rows.join("\n")}`;
+    }).join("\n");
+
+    const contenu = `CHECKLIST DE VISITE — ${bien.nom}\nDate : ${today}\nAdresse : ${bien.adresse || "Non renseignée"}\n\nAvancement : ${vus}/${total} points vérifiés\nProblèmes détectés : ${problemes} (dont ${pbCritiques} critiques)\n${lignes}`;
+    const blob = new Blob([contenu], { type: "text/plain;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `checklist-visite-${bien.nom.replace(/\s+/g,"-")}.txt`;
+    a.click();
+  };
+
+  return (
+    <div>
+      <STitle accent={T.green}>✅ Checklist de visite</STitle>
+
+      {/* Progression */}
+      <Card style={{ padding: 18, marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{bien.adresse || bien.nom}</div>
+            <div style={{ fontSize: 11, color: T.textMuted }}>{vus}/{total} points vérifiés</div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            {problemes > 0 && <div style={{ fontSize: 12, fontWeight: 700, color: T.red }}>⚠️ {problemes} problème{problemes > 1 ? "s" : ""} {pbCritiques > 0 ? `(${pbCritiques} critique${pbCritiques > 1 ? "s" : ""})` : ""}</div>}
+            {problemes === 0 && vus > 0 && <div style={{ fontSize: 12, fontWeight: 700, color: T.green }}>✅ Aucun problème détecté</div>}
+          </div>
+        </div>
+        <div style={{ background: T.surface2, borderRadius: 10, height: 8, overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg,${T.green},${T.blue})`, borderRadius: 10, transition: "width 0.3s" }} />
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 10, color: T.textMuted }}>
+          <span>{pct}% complété</span>
+          <span>🟢 OK &nbsp; 🔴 Problème &nbsp; ⬜ Non vu</span>
+        </div>
+      </Card>
+
+      {/* Légende */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, fontSize: 11, color: T.textMuted }}>
+        <span>Cliquer pour basculer :</span>
+        <span style={{ color: T.textMuted }}>⬜ Non vu</span>
+        <span>→</span>
+        <span style={{ color: T.green }}>✅ OK</span>
+        <span>→</span>
+        <span style={{ color: T.red }}>❌ Problème</span>
+        <span>→</span>
+        <span style={{ color: T.textMuted }}>⬜</span>
+      </div>
+
+      {/* Filtre catégories */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 14, overflowX: "auto", paddingBottom: 4 }}>
+        {categories.map(cat => (
+          <button key={cat} onClick={() => setFiltreCategorie(cat)} style={{ padding: "5px 10px", border: `1px solid ${filtreCategorie === cat ? T.green + "60" : T.border}`, borderRadius: 20, background: filtreCategorie === cat ? T.green + "18" : T.surface2, color: filtreCategorie === cat ? T.green : T.textMuted, fontWeight: 600, fontSize: 11, cursor: "pointer", whiteSpace: "nowrap" }}>{cat === "Tout" ? cat : cat.split(" ").slice(0,2).join(" ")}</button>
+        ))}
+      </div>
+
+      {/* Liste */}
+      <div style={{ display: "grid", gap: 6, marginBottom: 16 }}>
+        {itemsFiltres.map(item => {
+          const etat = checks[item.id];
+          const bg = etat === true ? T.green + "12" : etat === false ? T.red + "12" : T.surface;
+          const borderColor = etat === true ? T.green + "40" : etat === false ? T.red + "40" : T.border;
+          const icon = etat === true ? "✅" : etat === false ? "❌" : "⬜";
+          return (
+            <div key={item.id} style={{ background: bg, border: `1px solid ${borderColor}`, borderRadius: 9, padding: "10px 12px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }} onClick={() => toggle(item.id)}>
+                <span style={{ fontSize: 18, flexShrink: 0 }}>{icon}</span>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontSize: 12, color: etat === null ? T.textSub : T.text, fontWeight: etat !== null ? 600 : 400 }}>{item.label}</span>
+                  {item.critique && <span style={{ marginLeft: 6, fontSize: 9, color: T.orange, fontWeight: 700, background: T.orange+"20", borderRadius: 4, padding: "1px 5px" }}>CRITIQUE</span>}
+                </div>
+              </div>
+              {etat === false && (
+                <div style={{ marginTop: 7 }}>
+                  <input value={notes[item.id] || ""} onChange={e => setNotes(prev => ({ ...prev, [item.id]: e.target.value }))} placeholder="Note sur le problème (coût estimé, urgence...)" style={{ width: "100%", background: T.surface2, border: `1px solid ${T.red}30`, borderRadius: 7, padding: "6px 10px", fontSize: 11, color: T.text, outline: "none" }} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <button onClick={exportChecklist} style={{ width: "100%", background: `linear-gradient(135deg,${T.green},${T.blue})`, color: "white", border: "none", borderRadius: 12, padding: "13px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+        📥 Exporter la checklist ({vus}/{total} points)
+      </button>
+    </div>
+  );
+}
+
+// ─── SAUVEGARDE ──────────────────────────────────────────────────────────────
+const STORAGE_KEY = "rentabilite_immo_biens";
+function loadSaved() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch { return []; }
+}
+function saveToDB(list) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); } catch {}
+}
+
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [activeTab, setActiveTab] = useState("simulateur");
   const [biens, setBiens] = useState([{ ...defaultBien }]);
   const [activeBien, setActiveBien] = useState(0);
   const [showAmortMensuel, setShowAmortMensuel] = useState(false);
+  const [savedBiens, setSavedBiens] = useState(loadSaved);
+  const [showSaved, setShowSaved] = useState(false);
+  const [saveMsg, setSaveMsg] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const handleSave = () => {
+    const name = bien.nom || "Mon bien";
+    const entry = { id: Date.now(), nom: name, date: new Date().toLocaleDateString("fr-FR"), data: bien };
+    const updated = [entry, ...savedBiens.filter(b => b.nom !== name)].slice(0, 20);
+    setSavedBiens(updated);
+    saveToDB(updated);
+    setSaveMsg("✅ Sauvegardé !");
+    setTimeout(() => setSaveMsg(""), 2000);
+  };
+
+  const handleLoad = (entry) => {
+    const idx = activeBien;
+    setBiens(prev => { const n = [...prev]; n[idx] = { ...entry.data }; return n; });
+    setShowSaved(false);
+  };
+
+  const handleDelete = (id) => {
+    const updated = savedBiens.filter(b => b.id !== id);
+    setSavedBiens(updated);
+    saveToDB(updated);
+  };
 
   const resultats = useMemo(() => biens.map(calculer), [biens]);
   const res = resultats[activeBien];
@@ -1215,24 +2318,37 @@ export default function App() {
 
   const scoreColor = res.score >= 18 ? T.green : res.score >= 10 ? T.gold : T.red;
 
-  const TABS = [["simulateur","📊 Simulateur"],["diagnostic","🤖 IA"],["fiscalite","🧾 Fiscalité"],["fiche","🏦 Fiche Bancaire"],["graphiques","📈 Graphiques"],["amortissement","🗓️ Amortissement"],["comparaison","⚖️ Comparaison"]];
+  const TABS = [["simulateur","📊 Simulateur"],["diagnostic","🤖 IA"],["marchand","🏗️ Marchand"],["tri","📊 TRI"],["checklist","✅ Visite"],["travaux","🔨 Travaux"],["revente","📈 Revente"],["rentabilite","🎯 Rentabilité"],["fiscalite","🧾 Fiscalité"],["fiche","🏦 Fiche Bancaire"],["graphiques","📉 Graphiques"],["amortissement","🗓️ Amortissement"],["comparaison","⚖️ Comparaison"]];
 
   return (
     <div style={{ minHeight: "100vh", background: T.bg, fontFamily: "DM Sans, sans-serif", color: T.text }}>
       <style>{css}</style>
       {/* Header */}
-      <div className="no-print" style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: "16px 28px", display: "flex", alignItems: "center", gap: 20 }}>
+      <div className="no-print" style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: "12px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+        <button className="mobile-header-btn" onClick={() => setSidebarOpen(true)} style={{ background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: "7px 10px", cursor: "pointer", fontSize: 16, color: T.gold }}>⚙️</button>
         <div>
-          <div style={{ fontSize: 10, color: T.textMuted, letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 3 }}>Simulateur professionnel</div>
-          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 400, fontFamily: "DM Serif Display, serif" }}>🏠 Rentabilité <span style={{ color: T.gold }}>Immo</span></h1>
+          <div style={{ fontSize: 9, color: T.textMuted, letterSpacing: "0.2em", textTransform: "uppercase" }}>Simulateur pro</div>
+          <h1 style={{ margin: 0, fontSize: 17, fontWeight: 400, fontFamily: "DM Serif Display, serif" }}>🏠 Rentabilité <span style={{ color: T.gold }}>Immo</span></h1>
         </div>
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 18 }}>
+        <div className="header-kpis" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 18 }}>
           <div style={{ textAlign: "center" }}><div style={{ fontSize: 10, color: T.textMuted, marginBottom: 1 }}>Cash-flow net</div><div style={{ fontSize: 17, fontWeight: 700, color: res.cashflowMensuel >= 0 ? T.green : T.red, fontFamily: "DM Serif Display, serif" }}>{fmtEur(Math.round(res.cashflowMensuel))}<span style={{ fontSize: 10, color: T.textMuted }}>/mois</span></div></div>
           <div style={{ width: 1, height: 30, background: T.border }} />
           <div style={{ textAlign: "center" }}><div style={{ fontSize: 10, color: T.textMuted, marginBottom: 1 }}>Score</div><div style={{ fontSize: 24, fontWeight: 400, color: scoreColor, fontFamily: "DM Serif Display, serif" }}>{res.score}<span style={{ fontSize: 12, color: T.textMuted }}>/25</span></div></div>
           <div style={{ background: scoreColor + "18", border: `1px solid ${scoreColor}40`, borderRadius: 8, padding: "5px 12px" }}><div style={{ fontSize: 12, fontWeight: 700, color: scoreColor }}>{res.interpScore[0]}</div></div>
         </div>
+        {/* KPIs mobile */}
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 9, color: T.textMuted }}>CF</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: res.cashflowMensuel >= 0 ? T.green : T.red }}>{fmtEur(Math.round(res.cashflowMensuel))}</div>
+          </div>
+          <div style={{ background: scoreColor+"18", border: `1px solid ${scoreColor}40`, borderRadius: 7, padding: "4px 8px" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: scoreColor }}>{res.score}/25</div>
+          </div>
+        </div>
       </div>
+      {/* Overlay mobile */}
+      {sidebarOpen && <div onClick={() => setSidebarOpen(false)} style={{ position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", background: "rgba(0,0,0,0.7)", zIndex: 999, display: "none" }} className="mobile-header-btn" />}
       {/* Tabs */}
       <div className="no-print" style={{ background: T.surface2, borderBottom: `1px solid ${T.border}`, padding: "0 28px", display: "flex", gap: 2, overflowX: "auto" }}>
         {TABS.map(([t, label]) => (
@@ -1244,17 +2360,44 @@ export default function App() {
 
       <div style={{ display: "flex" }}>
         {/* Sidebar */}
-        <div className="no-print" style={{ width: 300, minWidth: 300, background: T.surface, borderRight: `1px solid ${T.border}`, padding: "18px 14px", overflowY: "auto", maxHeight: "calc(100vh - 104px)", position: "sticky", top: 0 }}>
+        <div className={`no-print sidebar${sidebarOpen ? " open" : ""}`} style={{ width: 300, minWidth: 300, background: T.surface, borderRight: `1px solid ${T.border}`, padding: "18px 14px", overflowY: "auto", maxHeight: "calc(100vh - 104px)", position: "sticky", top: 0 }}>
+          <button className="mobile-header-btn" onClick={() => setSidebarOpen(false)} style={{ width: "100%", marginBottom: 12, background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, padding: "10px", cursor: "pointer", fontSize: 13, color: T.textMuted, fontWeight: 700 }}>✕ Fermer</button>
           {biens.length > 1 && <div style={{ display: "flex", gap: 5, marginBottom: 12 }}>{biens.map((b, i) => <button key={i} onClick={() => setActiveBien(i)} style={{ flex: 1, padding: "6px 7px", border: `1px solid ${activeBien===i?T.gold:T.border}`, borderRadius: 7, background: activeBien===i?T.gold+"18":T.surface2, color: activeBien===i?T.gold:T.textMuted, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>{b.nom}</button>)}</div>}
           <BienForm bien={bien} onChange={v => updateBien(activeBien, v)} />
           <div style={{ display: "flex", gap: 7, marginTop: 6 }}>
             {biens.length < 3 && <button onClick={addBien} style={{ flex: 1, padding: "9px", border: `1px dashed ${T.green}50`, borderRadius: 9, background: T.green+"0a", color: T.green, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>+ Ajouter</button>}
             {biens.length > 1 && <button onClick={() => removeBien(activeBien)} style={{ padding: "9px 12px", border: `1px solid ${T.red}40`, borderRadius: 9, background: T.red+"10", color: T.red, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>🗑️</button>}
           </div>
+          {/* Sauvegarde */}
+          <div style={{ marginTop: 10, display: "flex", gap: 7 }}>
+            <button onClick={handleSave} style={{ flex: 1, padding: "9px", border: `1px solid ${T.gold}50`, borderRadius: 9, background: T.gold+"12", color: T.gold, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>
+              💾 {saveMsg || "Sauvegarder"}
+            </button>
+            <button onClick={() => setShowSaved(!showSaved)} style={{ position: "relative", padding: "9px 12px", border: `1px solid ${T.blue}50`, borderRadius: 9, background: T.blue+"12", color: T.blue, fontWeight: 700, fontSize: 11, cursor: "pointer" }}>
+              📂 {savedBiens.length > 0 && <span style={{ position: "absolute", top: -4, right: -4, background: T.gold, color: T.bg, borderRadius: 10, fontSize: 9, fontWeight: 900, padding: "1px 5px" }}>{savedBiens.length}</span>}
+            </button>
+          </div>
+          {/* Liste biens sauvegardés */}
+          {showSaved && (
+            <div style={{ marginTop: 10, background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 11, padding: 10 }}>
+              <div style={{ fontSize: 11, color: T.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>📂 Biens sauvegardés</div>
+              {savedBiens.length === 0 && <div style={{ fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>Aucun bien sauvegardé</div>}
+              {savedBiens.map(entry => (
+                <div key={entry.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "8px 10px", marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.nom}</div>
+                    <div style={{ fontSize: 10, color: T.textMuted }}>{entry.date}</div>
+                  </div>
+                  <button onClick={() => handleLoad(entry)} style={{ padding: "4px 8px", border: `1px solid ${T.green}40`, borderRadius: 6, background: T.green+"12", color: T.green, fontSize: 10, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>Charger</button>
+                  <button onClick={() => handleDelete(entry.id)} style={{ padding: "4px 7px", border: `1px solid ${T.red}40`, borderRadius: 6, background: T.red+"12", color: T.red, fontSize: 10, cursor: "pointer", flexShrink: 0 }}>✕</button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Main */}
-        <div style={{ flex: 1, padding: "24px 24px", overflowY: "auto", maxHeight: "calc(100vh - 104px)" }}>
+        <div className="main-content" style={{ flex: 1, padding: "24px 24px", overflowY: "auto", maxHeight: "calc(100vh - 104px)" }}>
 
           {activeTab === "simulateur" && (
             <div>
@@ -1263,10 +2406,22 @@ export default function App() {
                 <div style={{ flex: 1 }}><div style={{ fontSize: 11, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.15em", marginBottom: 3 }}>Verdict</div><div style={{ fontSize: 22, fontWeight: 400, color: T.text, fontFamily: "DM Serif Display, serif" }}>{res.interpScore[0]}</div><div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>{bien.nom} · Score {res.score}/25</div></div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>{[["Prix",fmtEur(bien.prix)],["Loyer",fmtEur(bien.loyer)+"/m"],["Surface",bien.surface+" m²"]].map(([k,v]) => <div key={k} style={{ textAlign: "center" }}><div style={{ fontSize: 10, color: T.textMuted, marginBottom: 2 }}>{k}</div><div style={{ fontWeight: 700, color: T.text, fontSize: 13 }}>{v}</div></div>)}</div>
               </div>
-              <div style={{ marginBottom: 20 }}><STitle accent={T.blue}>💰 Coûts</STitle><div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}><StatCard label="Prix+Notaire" value={fmtEur(Math.round(res.notaire))} sub={`Notaire: ${fmtEur(Math.round(res.notaire-bien.prix))}`} /><StatCard label="Coût total" value={fmtEur(Math.round(res.coutTotal))} /><StatCard label="À emprunter" value={fmtEur(Math.round(res.aEmprunter))} sub={`Apport: ${fmtEur(bien.apport)}`} /><StatCard label="Prix au m²" value={fmtEur(Math.round(res.prixM2))} /></div></div>
-              <div style={{ marginBottom: 20 }}><STitle accent={T.purple}>🏦 Financement</STitle><div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}><StatCard label="Mensualité crédit" value={fmtEur(Math.round(res.mensualiteCredit))} /><StatCard label="Assurance/mois" value={fmtEur(Math.round(res.mensualiteAssurance))} /><StatCard label="Mensualité totale" value={fmtEur(Math.round(res.mensualiteTotale))} /><StatCard label="Coût total crédit" value={fmtEur(Math.round(res.coutTotalCredit))} /></div></div>
-              <div style={{ marginBottom: 20 }}><STitle accent={T.green}>📊 Rentabilité</STitle><div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 10 }}><StatCard label="Renta brute" value={fmtPct(res.rentaBrute)} /><StatCard label="Renta nette" value={fmtPct(res.rentaNette)} sub={res.interpRentaNette[0]} note={res.interpRentaNette[1]} /><StatCard label="Renta net-net" value={fmtPct(res.rentaNetNet)} sub={res.interpRentaNetNet[0]} note={res.interpRentaNetNet[1]} glow /></div><div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}><StatCard label="DSCR" value={fmt(res.dscr,2)} sub={res.interpDSCR[0]} note={res.interpDSCR[1]} /><StatCard label="Cash-flow brut/mois" value={fmtEur(Math.round(res.cashflowMensuel))} sub={res.interpCash[0]} note={res.interpCash[1]} glow /><StatCard label={`CF net (${bien.regime})`} value={fmtEur(Math.round(res.cashflowApresImpot))} sub={`Impôt: ${fmtEur(Math.round(res.impotFiscal/12))}/mois`} note={res.cashflowApresImpot>=0?4:1} /></div></div>
-              <div><STitle accent={T.gold}>🎯 Score (/5 par critère)</STitle><div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 9 }}><Badge label="Net-net" note={res.interpRentaNetNet[1]} /><Badge label="DSCR" note={res.interpDSCR[1]} /><Badge label="Renta nette" note={res.interpRentaNette[1]} /><Badge label="Cash-flow" note={res.interpCash[1]} /><Badge label="Emplacement" note={bien.emplacement} /></div></div>
+              <div style={{ marginBottom: 20 }}><STitle accent={T.blue}>💰 Coûts</STitle><div className="stat-grid-4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}><StatCard label="Prix+Notaire" value={fmtEur(Math.round(res.notaire))} sub={`Notaire: ${fmtEur(Math.round(res.notaire-bien.prix))}`} /><StatCard label="Coût total" value={fmtEur(Math.round(res.coutTotal))} /><StatCard label="À emprunter" value={fmtEur(Math.round(res.aEmprunter))} sub={`Apport: ${fmtEur(bien.apport)}`} /><StatCard label="Prix au m²" value={fmtEur(Math.round(res.prixM2))} /></div></div>
+              <div style={{ marginBottom: 20 }}><STitle accent={T.purple}>🏦 Financement</STitle><div className="stat-grid-4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}><StatCard label="Mensualité crédit" value={fmtEur(Math.round(res.mensualiteCredit))} /><StatCard label="Assurance/mois" value={fmtEur(Math.round(res.mensualiteAssurance))} /><StatCard label="Mensualité totale" value={fmtEur(Math.round(res.mensualiteTotale))} /><StatCard label="Coût total crédit" value={fmtEur(Math.round(res.coutTotalCredit))} /></div></div>
+              <div style={{ marginBottom: 20 }}><STitle accent={T.green}>📊 Rentabilité</STitle><div className="stat-grid-3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 10 }}><StatCard label="Renta brute" value={fmtPct(res.rentaBrute)} /><StatCard label="Renta nette" value={fmtPct(res.rentaNette)} sub={res.interpRentaNette[0]} note={res.interpRentaNette[1]} /><StatCard label="Renta net-net" value={fmtPct(res.rentaNetNet)} sub={res.interpRentaNetNet[0]} note={res.interpRentaNetNet[1]} glow /></div><div className="stat-grid-3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}><StatCard label="DSCR" value={fmt(res.dscr,2)} sub={res.interpDSCR[0]} note={res.interpDSCR[1]} /><StatCard label="Cash-flow brut/mois" value={fmtEur(Math.round(res.cashflowMensuel))} sub={res.interpCash[0]} note={res.interpCash[1]} glow /><StatCard label={`CF net (${bien.regime})`} value={fmtEur(Math.round(res.cashflowApresImpot))} sub={`Impôt: ${fmtEur(Math.round(res.impotFiscal/12))}/mois`} note={res.cashflowApresImpot>=0?4:1} /></div></div>
+              {/* Vacance + Gestion si activés */}
+              {((bien.vacanceLocative||0) > 0 || (bien.tauxGestion||0) > 0) && (
+                <div style={{ marginBottom: 20 }}>
+                  <STitle accent={T.orange}>🏠 Scénario réaliste (vacance + gestion)</STitle>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
+                    <StatCard label={`Vacance ${res.vacanceMois} mois/an`} value={fmtEur(Math.round(res.loyerAnnuelVacance/12)+"€/m")} sub={`Loyer effectif/mois`} note={(bien.vacanceLocative||0)===0?4:3} />
+                    <StatCard label={`Frais gestion ${bien.tauxGestion||0}%`} value={fmtEur(Math.round(res.fraisGestion))} sub="par an" note={(bien.tauxGestion||0)===0?4:3} />
+                    <StatCard label="Loyer net/an" value={fmtEur(Math.round(res.loyerNetGestion))} sub="après vacance + gestion" />
+                    <StatCard label="CF réaliste/mois" value={fmtEur(Math.round(res.cashflowAvecVacance))} sub="vacance + gestion inclus" note={res.cashflowAvecVacance>=300?4:res.cashflowAvecVacance>=0?3:1} glow />
+                  </div>
+                </div>
+              )}
+              <div><STitle accent={T.gold}>🎯 Score (/5 par critère)</STitle><div className="stat-grid-5" style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 9 }}><Badge label="Net-net" note={res.interpRentaNetNet[1]} /><Badge label="DSCR" note={res.interpDSCR[1]} /><Badge label="Renta nette" note={res.interpRentaNette[1]} /><Badge label="Cash-flow" note={res.interpCash[1]} /><Badge label="Emplacement" note={bien.emplacement} /></div></div>
             </div>
           )}
 
@@ -1308,6 +2463,15 @@ export default function App() {
               </Card>
             </div>
           )}
+
+          {activeTab === "marchand" && <MarchandBiens bien={bien} res={res} />}
+          {activeTab === "tri" && <CalculateurTRI bien={bien} res={res} />}
+          {activeTab === "checklist" && <ChecklistVisite bien={bien} />}
+          {activeTab === "travaux" && <CalculateurTravaux bien={bien} onChange={v => updateBien(activeBien, v)} />}
+
+          {activeTab === "revente" && <SimulationRevente bien={bien} res={res} />}
+
+          {activeTab === "rentabilite" && <AlerteRentabilite bien={bien} res={res} onChange={v => updateBien(activeBien, v)} />}
 
           {activeTab === "comparaison" && (
             <div>
